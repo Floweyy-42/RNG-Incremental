@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RNG Incremental</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Inter',sans-serif;background:#ffffff;color:#111;height:100vh;display:flex;justify-content:center;align-items:center;}
+.container{text-align:center;max-width:700px;padding:2rem;}
+h1{font-size:2.2rem;font-weight:900;}
+.coins{font-size:3.5rem;font-weight:900;margin:20px 0;}
+button{font-family:inherit;padding:10px 18px;margin:6px;border-radius:14px;border:none;cursor:pointer;font-weight:600;font-size:1rem;}
+.primary{background:#111;color:white;}.upgrade{background:#f2f2f2;}
+.roll-area{margin-top:20px;padding:30px;border-radius:16px;border:2px dashed #ddd;font-weight:600;cursor:pointer;}
+.side-stats{position:fixed;top:20px;right:20px;text-align:right;font-size:0.95rem;line-height:1.6;}
+.stat-label{opacity:0.7;}
+</style>
+</head>
+<body>
+
+<div class="side-stats">
+  <div>🏆 <span class="stat-label">Best:</span> <span id="best">None</span></div>
+  <div>💰 <span class="stat-label">Coin Multi:</span> x<span id="coinMulti">1</span></div>
+  <div>🍀 <span class="stat-label">Luck Multi:</span> x<span id="luckMulti">1</span></div>
+  <div>🔁 <span class="stat-label">Rebirths:</span> <span id="rebirths">0</span></div>
+  <div>🎲 <span class="stat-label">Rolls:</span> <span id="rollCount">0</span></div>
+</div>
+
+<div class="container">
+  <h1>🎲 RNG Simulator</h1>
+  <div class="coins">💎 <span id="coins">0</span></div>
+  <div class="roll-area" id="rollArea">🔥 Hold here 🔥</div>
+  <div id="rankInfo" style="margin-top:15px;font-weight:600"></div>
+  <div id="nextInfo" style="margin-top:5px;opacity:0.7"></div>
+  <h2>⚡ Upgrades</h2>
+  <button class="upgrade" onclick="upgradeCoins()">💰 +Coins per RNG (Cost: <span id="coinCost">5</span>)</button>
+  <button class="upgrade" onclick="upgradeLuck()">🍀 +Luck Multiplier (Cost: <span id="luckCost">25</span>)</button>
+  <button class="upgrade" id="rollPSBtn" style="display:none;" onclick="upgradeRollPS()">🎲 +Rolls per Second (Cost: <span id="rollPSCost">10k</span>)</button>
+  <button class="upgrade" id="coinMultiBtn" style="display:none;" onclick="upgradeCoinMulti()">💎 x2 Coins (Cost: <span id="coinMultiCost">100k</span>)</button>
+  <h2>🌌 Rebirth</h2>
+  <button class="primary" id="rebirthBtn" onclick="rebirth()">🔁 Rebirth</button>
+  <div id="rebirthInfo" style="margin-top:8px;font-weight:600;"></div>
+</div>
+
+<script>
+let coins=0, baseCoins=1, coinCost=5, luckLevel=0, luckCost=25;
+let rebirthCount=0, coinRebirthMulti=1, luckRebirthMulti=1;
+let rollTotal=0, rollsPerSecond=0, rollPSCost=10000, coinMultiBonus=1, coinMultiCost=100000;
+const rarities=["Common","Uncommon","Rare","Epic","Legendary","Mythic","Eternal","Secret"];
+let bestIndex=-1, rarityCostScale=5;
+const MAX_INDEX=rarities.length*5-1;
+let hovering=false;
+
+const rebirthData=[
+  {luck:2, coins:5, unlockRollPS:true, reqIndex:4},
+  {luck:4, coins:10, rarityScale:1.5, unlockCoinMulti:true, reqIndex:7},
+  {luck:8, coins:25, rarityScale:2.5, reqIndex:11},
+  {luck:15, coins:75, rarityScale:5, upgradeCost:2, reqIndex:15},
+  {luck:30, coins:200, rarityScale:10, upgradeCost:4.5, reqIndex:19}
+];
+
+function format(n){const units=['','k','m','b','t','q','Qn','Sx','Sp','Oc','No','Dc'];let u=0;while(n>=1000&&u<units.length-1){n/=1000;u++;}return n.toFixed(2)+units[u];}
+
+function getCoinMulti(){return bestIndex<0?1*coinRebirthMulti*coinMultiBonus:Math.pow(3,bestIndex)*coinRebirthMulti*coinMultiBonus;}
+function getLuckMulti(){return Math.pow(1.5,luckLevel)*luckRebirthMulti;}
+
+function rollRNG(){
+  let weights=[],total=0;
+  for(let i=0;i<=MAX_INDEX;i++){
+    let weight=1/Math.pow(rarityCostScale,i);
+    let luckBoost=1+(getLuckMulti()-1)*(i/MAX_INDEX);
+    weight*=luckBoost;
+    weights.push(weight);
+    total+=weight;
+  }
+  let r=Math.random()*total;
+  for(let i=0;i<weights.length;i++){
+    if(r<weights[i]) return i;
+    r-=weights[i];
+  }
+  return 0;
+}
+
+function roll(){
+  let rolledIndex=rollRNG();
+  rollTotal++;
+  if(rolledIndex>bestIndex) bestIndex=rolledIndex;
+  coins+=baseCoins*getCoinMulti();
+  updateUI();
+}
+
+// HOLD SYSTEM (fixed)
+const area=document.getElementById("rollArea");
+area.addEventListener("mouseenter",()=>hovering=true);
+area.addEventListener("mouseleave",()=>hovering=false);
+
+setInterval(()=>{
+  if(hovering) roll();
+},200);
+
+// Rolls per second (separate, does NOT break hold)
+setInterval(()=>{
+  for(let i=0;i<rollsPerSecond;i++) roll();
+},1000);
+
+function upgradeCoins(){if(coins>=coinCost){coins-=coinCost;baseCoins+=1;coinCost*=2;updateUI();}}
+function upgradeLuck(){if(coins>=luckCost){coins-=luckCost;luckLevel+=1;luckCost*=3;updateUI();}}
+function upgradeRollPS(){if(coins>=rollPSCost){coins-=rollPSCost;rollsPerSecond+=1;rollPSCost*=5;updateUI();}}
+function upgradeCoinMulti(){if(coins>=coinMultiCost){coins-=coinMultiCost;coinMultiBonus*=2;coinMultiCost*=10;updateUI();}}
+
+function rebirth(){
+  if(rebirthCount>=rebirthData.length) return;
+  let requiredIndex=rebirthData[rebirthCount].reqIndex;
+  if(bestIndex>=requiredIndex){
+    let r=rebirthData[rebirthCount];
+    coinRebirthMulti*=r.coins;
+    luckRebirthMulti*=r.luck;
+    if(r.rarityScale) rarityCostScale/=r.rarityScale;
+    if(r.upgradeCost) coinCost/=r.upgradeCost;
+    if(r.unlockRollPS) document.getElementById('rollPSBtn').style.display='inline-block';
+    if(r.unlockCoinMulti) document.getElementById('coinMultiBtn').style.display='inline-block';
+    rebirthCount++;
+    coins=0;baseCoins=1;coinCost=5;luckLevel=0;luckCost=25;bestIndex=-1;
+    updateUI();
+  }
+}
+
+function updateUI(){
+  
+  // Calculate probabilities with luck applied
+  let weights=[],total=0;
+  for(let i=0;i<=MAX_INDEX;i++){
+    let weight=1/Math.pow(rarityCostScale,i);
+    let luckBoost=1+(getLuckMulti()-1)*(i/MAX_INDEX);
+    weight*=luckBoost;
+    weights.push(weight);
+    total+=weight;
+  }
+
+  function getChanceFraction(index){
+    if(index<0) return 0;
+    let probability = (weights[index]/total);
+    if(probability <= 0) return "1/∞";
+    let oneIn = 1/probability;
+    return "1/" + format(oneIn);
+  }
+  document.getElementById("coins").innerText=format(coins);
+  document.getElementById("coinCost").innerText=format(coinCost);
+  document.getElementById("luckCost").innerText=format(luckCost);
+  document.getElementById("rollPSCost").innerText=format(rollPSCost);
+  document.getElementById("coinMultiCost").innerText=format(coinMultiCost);
+  document.getElementById("rebirths").innerText=rebirthCount;
+  document.getElementById("rollCount").innerText=rollTotal;
+  document.getElementById("coinMulti").innerText=getCoinMulti().toFixed(2);
+  document.getElementById("luckMulti").innerText=getLuckMulti().toFixed(2);
+  document.getElementById("best").innerText=bestIndex>=0?rarities[Math.floor(bestIndex/5)]+" "+((bestIndex%5)+1):"None";
+
+  // Current and next rank probabilities
+  if(bestIndex>=0){
+    let currentName = rarities[Math.floor(bestIndex/5)] + " " + ((bestIndex%5)+1);
+    let currentChance = getChanceFraction(bestIndex);
+    document.getElementById("rankInfo").innerText = `Your Rank: ${currentName} (${currentChance})`;
+
+    if(bestIndex < MAX_INDEX){
+      let nextIndex = bestIndex + 1;
+      let nextName = rarities[Math.floor(nextIndex/5)] + " " + ((nextIndex%5)+1);
+      let nextChance = getChanceFraction(nextIndex);
+      document.getElementById("nextInfo").innerText = `Next Rank: ${nextName} (${nextChance})`;
+    } else {
+      document.getElementById("nextInfo").innerText = "Max Rank Reached";
+    }
+  } else {
+    document.getElementById("rankInfo").innerText = "Your Rank: None";
+    document.getElementById("nextInfo").innerText = "";
+  }
+
+  // Rebirth UI info
+  if(rebirthCount < rebirthData.length){
+    let r = rebirthData[rebirthCount];
+    let rarityName = rarities[Math.floor(r.reqIndex/5)] + " " + ((r.reqIndex%5)+1);
+    document.getElementById("rebirthBtn").innerText = "🔁 Rebirth (Requires: " + rarityName + ")";
+
+    let rewards = `Gives: x${r.coins} Coins Multi, x${r.luck} Luck Multi`;
+    if(r.unlockRollPS) rewards += ", Unlocks Rolls/s";
+    if(r.unlockCoinMulti) rewards += ", Unlocks x2 Coins Upgrade";
+    document.getElementById("rebirthInfo").innerText = rewards;
+  } else {
+    document.getElementById("rebirthBtn").innerText = "🔁 Max Rebirth Reached";
+    document.getElementById("rebirthInfo").innerText = "";
+  }
+}
+
+updateUI();
+</script>
+
+</body>
+</html>
